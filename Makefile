@@ -51,7 +51,7 @@ test-pytest:  ## Run unit tests with pytest
 	pytest tests
 
 watch: .env  ## Start the application in watch mode
-	$(APP) heartbeat.py -- --reload
+	$(APP) serve heartbeat.py -- --reload
 
 watch-mypy:  ## Continuously run mypy for type checks
 	find src tests -name "*.py"|MYPYPATH=$(PWD)/stubs entr mypy --show-error-codes --strict src tests
