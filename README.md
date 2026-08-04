@@ -240,12 +240,6 @@ devenv shell
 make shell
 ```
 
-Build and link the virtual environment:
-
-```bash
-make env
-```
-
 ### Running Tests Locally
 
 Run all checks (linting, type checking, unit tests):

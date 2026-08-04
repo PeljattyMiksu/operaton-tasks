@@ -12,9 +12,6 @@ APP := operaton-tasks
 build:  ## Build application
 	devenv build outputs.python.app
 
-env:  ## Build and link the Python virtual environment
-	ln -s $(shell devenv build outputs.python.virtualenv) env
-
 check:  ## Run static analysis checks
 	treefmt --fail-on-change
 	flake8 src tests
@@ -23,7 +20,7 @@ check:  ## Run static analysis checks
 
 clean:  ## Remove build artifacts and temporary files
 	devenv gc
-	$(RM) -r env htmlcov
+	$(RM) -r htmlcov
 
 devenv-up:  ## Start background services
 	devenv processes up -d
