@@ -12,6 +12,7 @@
 .pytest_cache/
 __pycache__/
 devenv.local.nix
+devenv.local.yaml
 env
 fixture/target/
 htmlcov/

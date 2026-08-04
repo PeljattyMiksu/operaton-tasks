@@ -1258,7 +1258,7 @@ wheels = [
 
 [[package]]
 name = "operaton-tasks"
-version = "1.0.0a6"
+version = "1.0b3.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
