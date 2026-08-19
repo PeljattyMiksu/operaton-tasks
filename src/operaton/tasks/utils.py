@@ -1,9 +1,10 @@
-from aiohttp import ClientResponse
+from aiohttp import ClientHandlerType, ClientRequest, ClientResponse
+from multidict import CIMultiDict
 from contextlib import asynccontextmanager
 from fastapi.exceptions import HTTPException
 from operaton.tasks.config import settings
 from operaton.tasks.oauth2 import token_manager
-from typing import Any
+from typing import Any, Awaitable, Callable
 from typing import AsyncGenerator
 from typing import Dict
 from typing import Optional
@@ -25,6 +26,43 @@ async def resolve_authorization_header(
         token = await token_manager.get_token()
         return f"Bearer {token}"
     return settings.ENGINE_REST_AUTHORIZATION
+
+
+async def token_refresh_middleware(
+    req: ClientRequest, handler: ClientHandlerType, authorization: Optional[str] = None
+) -> ClientResponse:
+
+    request_headers = req.headers or CIMultiDict[str]()
+    response: Optional[ClientResponse] = None
+
+    for attempt in range(2):  # pragma: no branch
+        auth_header = await resolve_authorization_header(authorization)
+        headers = request_headers.copy()
+        if auth_header and "Authorization" not in headers:
+            headers["Authorization"] = auth_header
+
+        req.headers = headers
+
+        response = await handler(req)
+        if (
+            response.status != 401
+            or attempt == 1
+            or authorization is not None
+            or "Authorization" in request_headers
+            or not token_manager.is_configured
+        ):
+            break
+        await response.read()
+        token_manager.invalidate()
+
+    assert response is not None
+    return response
+
+
+def token_refresh_middleware_with_auth(
+    authorization: Optional[str] = None,
+) -> Callable[[ClientRequest, ClientHandlerType], Awaitable[ClientResponse]]:
+    return lambda req, handler: token_refresh_middleware(req, handler, authorization)
 
 
 @asynccontextmanager
@@ -63,27 +101,12 @@ async def request_with_auth_retry(
     """Execute request and retry once on 401 when using OAuth2."""
     request_kwargs: Dict[str, Any] = dict(kwargs)
     request_headers = dict(request_kwargs.pop("headers", {}) or {})
-    response: Optional[ClientResponse] = None
 
-    for attempt in range(2):  # pragma: no branch
-        auth_header = await resolve_authorization_header(authorization)
-        headers = dict(request_headers)
-        if auth_header and "Authorization" not in headers:
-            headers["Authorization"] = auth_header
-
-        response = await http.request(method, url, headers=headers, **request_kwargs)
-
-        if (
-            response.status != 401
-            or attempt == 1
-            or authorization is not None
-            or "Authorization" in request_headers
-            or not token_manager.is_configured
-        ):
-            break
-
-        await response.read()
-        token_manager.invalidate()
+    middlewares = request_kwargs.pop("middlewares", [])
+    middlewares.append(token_refresh_middleware_with_auth(authorization))
+    response: ClientResponse = await http.request(
+        method, url, headers=request_headers, middlewares=middlewares, **request_kwargs
+    )
 
     assert response is not None
     return response
@@ -128,6 +151,8 @@ __all__ = [
     "aiohttp",
     "resolve_authorization_header",
     "operaton_session",
+    "token_refresh_middleware",
+    "token_refresh_middleware_with_auth",
     "request_with_auth_retry",
     "token_manager",
     "canonical_url",
