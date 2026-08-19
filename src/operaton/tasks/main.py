@@ -111,35 +111,43 @@ if HAS_CLI:
 
     @cli.command()
     def serve(
-        module: Path = typer.Argument(..., help="Path to Python module with task handlers"),
-        args: Optional[list[str]] = typer.Argument(default=None, help="Arguments passed to uvicorn"),
-        base_url: Optional[str] = typer.Option(
-            None, help="Engine REST base URL"
+        module: Path = typer.Argument(
+            ..., help="Path to Python module with task handlers"
         ),
+        args: Optional[list[str]] = typer.Argument(
+            default=None, help="Arguments passed to uvicorn"
+        ),
+        base_url: Optional[str] = typer.Option(None, help="Engine REST base URL"),
         authorization: Optional[str] = typer.Option(
             None, help="Authorization header value"
         ),
-        oauth2_client_id: Optional[str] = typer.Option(
-            None, help="OAuth2 client ID"
-        ),
+        oauth2_client_id: Optional[str] = typer.Option(None, help="OAuth2 client ID"),
         oauth2_client_secret: Optional[str] = typer.Option(
             None, help="OAuth2 client secret"
         ),
-        oauth2_token_url: Optional[str] = typer.Option(
-            None, help="OAuth2 token URL"
-        ),
+        oauth2_token_url: Optional[str] = typer.Option(None, help="OAuth2 token URL"),
         oauth2_scopes: Optional[str] = typer.Option(
             None, help="OAuth2 scopes (space-separated)"
         ),
-        timeout: Optional[int] = typer.Option(None, help="HTTP request timeout in seconds"),
-        poll_ttl: Optional[int] = typer.Option(None, help="Long-poll timeout in seconds"),
-        lock_ttl: Optional[int] = typer.Option(None, help="External task lock duration in seconds"),
+        timeout: Optional[int] = typer.Option(
+            None, help="HTTP request timeout in seconds"
+        ),
+        poll_ttl: Optional[int] = typer.Option(
+            None, help="Long-poll timeout in seconds"
+        ),
+        lock_ttl: Optional[int] = typer.Option(
+            None, help="External task lock duration in seconds"
+        ),
         worker_id: Optional[str] = typer.Option(
             None, help="Worker ID sent to Operaton"
         ),
         log_level: Optional[str] = typer.Option(None, help="Logging level"),
-        limit: Optional[int] = typer.Option(None, help="Max tasks to process before exit (0=unlimited)"),
-        run_timeout: Optional[int] = typer.Option(None, help="Exit after N seconds (0=no timeout)"),
+        limit: Optional[int] = typer.Option(
+            None, help="Max tasks to process before exit (0=unlimited)"
+        ),
+        run_timeout: Optional[int] = typer.Option(
+            None, help="Exit after N seconds (0=no timeout)"
+        ),
     ) -> None:
         """Run External Service Task Worker."""
         if base_url is not None:
@@ -177,10 +185,14 @@ if HAS_CLI:
                 _mod = importlib.util.module_from_spec(_spec)
                 if _spec.loader:
                     _spec.loader.exec_module(_mod)
-            exit(asyncio.run(run_worker_once(
-                limit=settings.TASKS_LIMIT,
-                timeout_seconds=settings.TASKS_RUN_TIMEOUT_SECONDS,
-            )))
+            exit(
+                asyncio.run(
+                    run_worker_once(
+                        limit=settings.TASKS_LIMIT,
+                        timeout_seconds=settings.TASKS_RUN_TIMEOUT_SECONDS,
+                    )
+                )
+            )
 
         sys.argv = [sys.argv[0], "operaton.tasks.main:app"]
         if args and "--no-proxy-headers" not in args:

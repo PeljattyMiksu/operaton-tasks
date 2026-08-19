@@ -321,7 +321,10 @@ async def fetch_and_lock_and_complete(
                 result = await fail_task(http, result)
 
             if isinstance(result, (ExternalTaskComplete, ExternalTaskFailure)):
-                if not (isinstance(result, ExternalTaskComplete) and isinstance(result.response, NoOp)):
+                if not (
+                    isinstance(result, ExternalTaskComplete)
+                    and isinstance(result.response, NoOp)
+                ):
                     completed += 1
                     if limit > 0 and completed >= limit:
                         raise LimitReached(completed)
