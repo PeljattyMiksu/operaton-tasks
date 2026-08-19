@@ -5,6 +5,8 @@ from operaton.tasks.utils import operaton_session
 from operaton.tasks.utils import request_with_auth_retry
 from operaton.tasks.utils import resolve_authorization_header
 from operaton.tasks.utils import verify_response_status
+from tests.fake_server import FakeServer
+from tests.fake_server import with_read_tracking
 from starlette.exceptions import HTTPException
 from typing import Any
 from typing import Dict
@@ -13,6 +15,7 @@ from typing import Optional
 import asyncio
 import operaton.tasks.utils as utils_module
 import pytest
+from tests.fake_server import FakeRequestResponse
 
 
 class FakeClientSessionFactory:
@@ -28,16 +31,6 @@ class FakeClientSessionFactory:
 
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
         return False
-
-
-class FakeRequestResponse:
-    def __init__(self, status: int) -> None:
-        self.status = status
-        self.read_calls = 0
-
-    async def read(self) -> bytes:
-        self.read_calls += 1
-        return b""
 
 
 class FakeRequestSession:
@@ -131,105 +124,111 @@ def test_operaton_session_builds_default_headers_without_auth(monkeypatch: Any) 
     assert fake_factory.kwargs["timeout"].total == settings.ENGINE_REST_TIMEOUT_SECONDS
 
 
-def test_request_with_auth_retry_does_not_retry_with_explicit_authorization(
+@pytest.mark.asyncio
+async def test_request_with_auth_retry_does_not_retry_with_explicit_authorization(
     monkeypatch: Any,
+    aiohttp_client: Any,
 ) -> None:
     monkeypatch.setattr(
         utils_module,
         "token_manager",
         FakeTokenManager(configured=True, tokens=["token-1"]),
     )
-    session = FakeRequestSession(statuses=[401])
+    server = FakeServer(statuses=[401])
+    session = await aiohttp_client(server.app)
 
-    async def run() -> int:
-        response = await request_with_auth_retry(
-            session,  # type: ignore[arg-type]
-            "GET",
-            "https://example.test/endpoint",
-            authorization="Bearer explicit",
-        )
-        return response.status
+    response = await request_with_auth_retry(
+        session,  # type: ignore[arg-type]
+        "GET",
+        "/endpoint",
+        authorization="Bearer explicit",
+    )
 
-    assert asyncio.run(run()) == 401
-    assert len(session.calls) == 1
-    assert session.calls[0]["headers"]["Authorization"] == "Bearer explicit"
+    assert response.status == 401
+    assert len(server.calls) == 1
+    assert server.calls[0].headers["Authorization"] == "Bearer explicit"
 
 
-def test_request_with_auth_retry_does_not_retry_with_request_header(
+@pytest.mark.asyncio
+async def test_request_with_auth_retry_does_not_retry_with_request_header(
     monkeypatch: Any,
+    aiohttp_client: Any,
 ) -> None:
     monkeypatch.setattr(
         utils_module,
         "token_manager",
         FakeTokenManager(configured=True, tokens=["token-1"]),
     )
-    session = FakeRequestSession(statuses=[401])
+    server = FakeServer(statuses=[401])
+    session = await aiohttp_client(server.app)
 
-    async def run() -> int:
-        response = await request_with_auth_retry(
-            session,  # type: ignore[arg-type]
-            "GET",
-            "https://example.test/endpoint",
-            headers={"Authorization": "Bearer supplied"},
-        )
-        return response.status
+    response = await request_with_auth_retry(
+        session,  # type: ignore[arg-type]
+        "GET",
+        "/endpoint",
+        headers={"Authorization": "Bearer supplied"},
+    )
 
-    assert asyncio.run(run()) == 401
-    assert len(session.calls) == 1
-    assert session.calls[0]["headers"]["Authorization"] == "Bearer supplied"
+    assert response.status == 401
+    assert len(server.calls) == 1
+    assert server.calls[0].headers["Authorization"] == "Bearer supplied"
 
 
-def test_request_with_auth_retry_does_not_retry_when_oauth2_disabled(
+@pytest.mark.asyncio
+async def test_request_with_auth_retry_does_not_retry_when_oauth2_disabled(
     monkeypatch: Any,
+    aiohttp_client: Any,
 ) -> None:
     monkeypatch.setattr(
         utils_module,
         "token_manager",
         FakeTokenManager(configured=False),
     )
-    session = FakeRequestSession(statuses=[401])
+    server = FakeServer(statuses=[401])
+    session = await aiohttp_client(server.app)
 
-    async def run() -> int:
-        response = await request_with_auth_retry(
-            session,  # type: ignore[arg-type]
-            "GET",
-            "https://example.test/endpoint",
-        )
-        return response.status
+    response = await request_with_auth_retry(
+        session,  # type: ignore[arg-type]
+        "GET",
+        "/endpoint",
+    )
 
-    assert asyncio.run(run()) == 401
-    assert len(session.calls) == 1
+    assert response.status == 401
+    assert len(server.calls) == 1
 
 
-def test_request_with_auth_retry_returns_second_401_after_retry(
+@pytest.mark.asyncio
+async def test_request_with_auth_retry_returns_second_401_after_retry(
     monkeypatch: Any,
+    aiohttp_client: Any,
 ) -> None:
     fake_token_manager = FakeTokenManager(
         configured=True,
         tokens=["token-1", "token-2"],
     )
     monkeypatch.setattr(utils_module, "token_manager", fake_token_manager)
-    session = FakeRequestSession(statuses=[401, 401])
+    server = FakeServer(statuses=[401, 401])
+    session = with_read_tracking(await aiohttp_client(server.app))
 
-    async def run() -> FakeRequestResponse:
-        return await request_with_auth_retry(
-            session,  # type: ignore[arg-type]
-            "GET",
-            "https://example.test/endpoint",
-        )
-
-    response = asyncio.run(run())
+    response = await request_with_auth_retry(
+        session,  # type: ignore[arg-type]
+        "GET",
+        "/endpoint",
+    )
 
     assert response.status == 401
-    assert len(session.calls) == 2
+    assert len(server.calls) == 2
     assert session.responses[0].read_calls == 1
     assert fake_token_manager.invalidations == 1
 
 
-def test_request_with_auth_retry_omits_authorization_when_none_resolved(
+@pytest.mark.asyncio
+async def test_request_with_auth_retry_omits_authorization_when_none_resolved(
     monkeypatch: Any,
+    aiohttp_client: Any,
 ) -> None:
-    session = FakeRequestSession(statuses=[200])
+    server = FakeServer(statuses=[200])
+    session = await aiohttp_client(server.app)
 
     async def fake_resolve_authorization_header(
         authorization: Optional[str] = None,
@@ -242,16 +241,14 @@ def test_request_with_auth_retry_omits_authorization_when_none_resolved(
         fake_resolve_authorization_header,
     )
 
-    async def run() -> int:
-        response = await request_with_auth_retry(
-            session,  # type: ignore[arg-type]
-            "GET",
-            "https://example.test/endpoint",
-        )
-        return response.status
+    response = await request_with_auth_retry(
+        session,  # type: ignore[arg-type]
+        "GET",
+        "/endpoint",
+    )
 
-    assert asyncio.run(run()) == 200
-    assert session.calls[0]["headers"] == {}
+    assert response.status == 200
+    assert server.calls[0].headers.get("Authorization") is None
 
 
 def test_next_retry_timeout_stays_within_bounds() -> None:

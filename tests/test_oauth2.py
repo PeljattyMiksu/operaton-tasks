@@ -13,6 +13,7 @@ import asyncio
 import operaton.tasks.oauth2 as oauth2_module
 import operaton.tasks.utils as utils_module
 import pytest
+from .fake_server import FakeServer
 
 
 class FakeTokenResponse:
@@ -228,27 +229,28 @@ def test_resolve_authorization_header_falls_back_to_static(monkeypatch: Any) -> 
         settings.ENGINE_REST_AUTHORIZATION = original_auth
 
 
-def test_request_with_auth_retry_retries_once_on_401(monkeypatch: Any) -> None:
+@pytest.mark.asyncio
+async def test_request_with_auth_retry_retries_once_on_401(
+    monkeypatch: Any,
+    aiohttp_client: Any,
+) -> None:
     fake_token_manager = FakeTokenManager(
         tokens=["token-1", "token-2"], configured=True
     )
     monkeypatch.setattr(utils_module, "token_manager", fake_token_manager)
-    session = FakeRequestSession(statuses=[401, 200])
+    server = FakeServer(statuses=[401, 200])
+    session = await aiohttp_client(server.app)
 
-    async def run() -> int:
-        response = await request_with_auth_retry(
-            session,  # type: ignore[arg-type]
-            "GET",
-            "https://example.test/endpoint",
-        )
-        return response.status
+    response = await request_with_auth_retry(
+        session,  # type: ignore[arg-type]
+        "GET",
+        "/endpoint",
+    )
 
-    status = asyncio.run(run())
-
-    assert status == 200
-    assert len(session.calls) == 2
-    assert session.calls[0]["headers"]["Authorization"] == "Bearer token-1"
-    assert session.calls[1]["headers"]["Authorization"] == "Bearer token-2"
+    assert response.status == 200
+    assert len(server.calls) == 2
+    assert server.calls[0].headers["Authorization"] == "Bearer token-1"
+    assert server.calls[1].headers["Authorization"] == "Bearer token-2"
     assert fake_token_manager.invalidations == 1
 
 
